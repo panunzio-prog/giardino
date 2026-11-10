@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Giardino">
+  <meta name="theme-color" content="#2f6b3a">
+  <link rel="apple-touch-icon" href="icona-180.png">
+  <link rel="icon" href="icona-180.png">
+  <link rel="manifest" href="manifest.json">
+  <title>Il mio giardino</title>
+  <link rel="stylesheet" href="stile.css">
+</head>
+<body>
+  <header id="testa">
+    <div class="titolo">🌳 <span id="titolo-pagina">Il mio giardino</span></div>
+    <div id="stato" class="stato"></div>
+    <button id="btn-aggiorna" class="icona-btn" title="Aggiorna dai dati di Dropbox" aria-label="Aggiorna">⟳</button>
+  </header>
+
+  <main id="contenuto"></main>
+
+  <nav id="schede-nav">
+    <a href="#mappa" data-p="mappa"><span>🗺️</span>Mappa</a>
+    <a href="#fare" data-p="fare"><span>✅</span>Da fare</a>
+    <a href="#schede" data-p="schede"><span>📇</span>Schede</a>
+    <a href="#diario" data-p="diario"><span>📖</span>Diario</a>
+    <a href="#meteo" data-p="meteo"><span>🌦️</span>Meteo</a>
+  </nav>
+
+  <div id="foglio-sfondo" class="nascosto"></div>
+  <section id="foglio" class="nascosto" aria-modal="true"></section>
+  <div id="avviso" class="nascosto"></div>
+
+  <script src="config.js"></script>
+  <script src="dropbox.js"></script>
+  <script src="dati.js"></script>
+  <script src="icone.js"></script>
+  <script src="mappa.js"></script>
+  <script src="pagine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

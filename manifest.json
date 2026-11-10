@@ -1,0 +1,14 @@
+{
+  "name": "Il mio giardino",
+  "short_name": "Giardino",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f1",
+  "theme_color": "#2f6b3a",
+  "lang": "it",
+  "icons": [
+    {"src": "icona-180.png", "sizes": "180x180", "type": "image/png"},
+    {"src": "icona-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}
