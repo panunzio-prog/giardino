@@ -139,7 +139,7 @@ table.tab td.num, table.tab th.num { text-align: right; }
 #avviso {
   position: fixed; left: 12px; right: 12px; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px); z-index: 40;
   background: #263238; color: #fff; border-radius: 12px; padding: 12px 14px; font-size: 14px;
-  box-shadow: 0 4px 14px rgba(0,0,0,.3);
+  box-shadow: 0 4px 14px rgba(0,0,0,.3); pointer-events: none;
 }
 #avviso.errore { background: #b71c1c; }
 
@@ -147,3 +147,54 @@ table.tab td.num, table.tab th.num { text-align: right; }
 .login { max-width: 480px; margin: 0 auto; }
 .login ol { padding-left: 20px; }
 .login li { margin: 8px 0; }
+
+/* ------------------------------------------------- viste, KPI e grafici */
+.chips.viste { margin: 2px 0 6px; }
+a.chip { text-decoration: none; color: var(--testo); }
+a.chip.on { color: #fff; }
+.kpi-griglia { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 8px 0; }
+.kpi { background: var(--carta); border-radius: 14px; padding: 10px 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  border-top: 4px solid var(--verde); min-width: 0; }
+.kpi.pioggia { border-top-color: #3b82c4; } .kpi.sole { border-top-color: #e9a23b; }
+.kpi.acqua { border-top-color: #2a9d8f; } .kpi.temp { border-top-color: #d9480f; }
+.kpi-ico { font-size: 20px; line-height: 1.2; }
+.kpi-lab { font-size: 12px; color: var(--grigio); font-weight: 600; }
+.kpi-val { font-size: 26px; font-weight: 700; }
+.kpi-unit { font-size: 12px; color: var(--grigio); margin-left: 4px; }
+.kpi .piccolo { font-size: 12px; }
+.tit-graf { font-weight: 700; font-size: 15px; margin-bottom: 2px; }
+.graf { width: 100%; }
+.delta-su { color: #2e7d32; font-weight: 600; } .delta-giu { color: #c62828; font-weight: 600; }
+.delta-caldo { color: #d84315; font-weight: 600; } .delta-freddo { color: #3949ab; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+  .delta-su { color: #81c784; } .delta-giu { color: #ef9a9a; } .delta-caldo { color: #ffab91; } .delta-freddo { color: #9fa8da; }
+}
+
+/* tabelle larghe: scorrono dentro la card, la prima colonna resta ferma */
+.tab-scorri { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.tab-scorri.alto { max-height: calc(100vh - 230px); overflow-y: auto; }
+table.tab-mesi, table.tab-anno { border-collapse: separate; border-spacing: 0; font-size: 12px; white-space: nowrap; }
+table.tab-mesi th, table.tab-mesi td { padding: 5px 6px; text-align: right; border-bottom: 1px solid var(--linea); }
+table.tab-mesi th { color: var(--grigio); font-weight: 600; }
+table.tab-mesi tr.totale td { font-weight: 700; }
+table.tab-mesi .nome, table.tab-anno .nome { position: sticky; left: 0; background: var(--carta); text-align: left; z-index: 1;
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+table.tab-mesi .nome a, table.tab-anno .nome a { color: inherit; text-decoration: none; }
+table.tab-anno th, table.tab-anno td { padding: 3px 2px; border-bottom: 1px solid var(--linea); text-align: center; min-width: 24px; }
+table.tab-anno th { position: sticky; top: 0; background: var(--carta); color: var(--grigio); z-index: 2; font-size: 11px; }
+table.tab-anno th.nome { z-index: 3; }
+table.tab-anno td.fiore { background: #fce4ec; }
+table.tab-anno .oggi { background: rgba(47,107,58,.14); }
+@media (prefers-color-scheme: dark) { table.tab-anno td.fiore { background: #4a2433; } }
+.sigla { display: inline-block; width: 14px; height: 14px; line-height: 14px; border-radius: 3px; color: #fff; font-size: 9px;
+  font-weight: 700; text-align: center; margin: 0 1px; vertical-align: middle; }
+.fiore-leg { background: #fce4ec; color: #880e4f; padding: 0 5px; border-radius: 4px; }
+.legenda-cal { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 4px 0; }
+
+/* ------------------------------------------------- modifica dalla mappa */
+details.modifica { margin-top: 14px; border-top: 1px solid var(--linea); padding-top: 8px; }
+details.modifica summary { font-weight: 600; color: var(--verde); padding: 6px 0; cursor: pointer; }
+.mappa-zoom button.aggiungi { background: var(--verde); color: #fff; font-size: 26px; margin-bottom: 6px; }
+.btn.bianco { background: #fff; color: #e65100; margin-left: 6px; }
+.barra-modo .btn { margin-left: 4px; }
+.barra-modo { max-width: calc(100vw - 20px); overflow-x: auto; }

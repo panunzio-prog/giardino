@@ -11,15 +11,29 @@
       : `<span class="mese-chip">${m}</span>`).join('') + '</div>';
   }
 
+  // chip in cima alla pagina per passare da una vista all'altra (#pagina/vista)
+  function viste(base, elenco, attuale) {
+    return '<div class="chips viste">' + elenco.map(([k, l]) =>
+      `<a class="chip${k === attuale ? ' on' : ''}" href="#${base}${k ? '/' + k : ''}">${l}</a>`).join('') + '</div>';
+  }
+  const VISTE_FARE = [['', '✅ Da fare'], ['calendario', '📅 Calendario'], ['ore', '⏱ Ore di lavoro']];
+  const VISTE_METEO = [['', '🌦️ Previsioni'], ['periodo', '📊 Periodo'], ['storico', '📈 Storico']];
+
   // =================================================================== DA FARE
   const fare = { mese: G.meseCorrente(), tipi: ['potatura', 'concimazione', 'trattamento'], nascondiFatte: false };
 
-  function paginaFare(main) {
+  function paginaFare(main, vista) {
+    if (vista === 'ore' || vista === 'calendario') {
+      main.innerHTML = viste('fare', VISTE_FARE, vista) + '<div id="vista"></div>';
+      const el = main.querySelector('#vista');
+      if (vista === 'ore') Analisi.vistaOre(el); else Analisi.vistaCalendario(el);
+      return;
+    }
     const d = G.Archivio.d;
     const anno = G.annoCorrente();
     const mese = fare.mese;
     const voci = Q.attivitaDelMese(d, mese, fare.tipi, true);
-    let h = `<div class="chips"><button class="chip" data-m="-1">‹</button><button class="chip on" data-m="0">${MESI_LUNGHI[mese - 1]}</button>` +
+    let h = viste('fare', VISTE_FARE, '') + `<div class="chips"><button class="chip" data-m="-1">‹</button><button class="chip on" data-m="0">${MESI_LUNGHI[mese - 1]}</button>` +
       `<button class="chip" data-m="1">›</button></div><div class="chips">` +
       Object.entries(TIPI_ATTIVITA).map(([k, t]) => `<button class="chip${fare.tipi.includes(k) ? ' on' : ''}" data-t="${k}">${t.emoji} ${t.label}</button>`).join('') +
       `<button class="chip${fare.nascondiFatte ? ' on' : ''}" id="nasc">Nascondi fatte</button></div>`;
@@ -92,7 +106,8 @@
 
   function paginaSchede(main) {
     const d = G.Archivio.d;
-    let h = `<input class="cerca" id="cerca" type="search" placeholder="Cerca una specie…" value="${esc(filtroSchede.testo)}">` +
+    let h = '<button class="btn" id="nuova-scheda" style="width:100%;margin:6px 0 8px">➕ Nuova scheda</button>' +
+      `<input class="cerca" id="cerca" type="search" placeholder="Cerca una specie…" value="${esc(filtroSchede.testo)}">` +
       '<div class="chips" style="margin-top:6px"><button class="chip' + (filtroSchede.cat ? '' : ' on') + '" data-c="">Tutte</button>' +
       Object.entries(CATEGORIE).map(([k, c]) => `<button class="chip${filtroSchede.cat === k ? ' on' : ''}" data-c="${k}">${c.label}</button>`).join('') +
       '</div><div id="elenco-schede"></div>';
@@ -114,15 +129,34 @@
     elenco();
     main.querySelector('#cerca').addEventListener('input', e => { filtroSchede.testo = e.target.value; elenco(); });
     main.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { filtroSchede.cat = b.dataset.c; paginaSchede(main); });
+    main.querySelector('#nuova-scheda').onclick = () => {
+      UI.foglio('<h2>Nuova scheda</h2><label class="campo">Nome comune<input id="n-nome" autocomplete="off"></label>' +
+        `<label class="campo">Categoria<select id="n-cat">${Object.entries(CATEGORIE).map(([k, c]) => `<option value="${k}" ${k === (filtroSchede.cat || 'frutteto') ? 'selected' : ''}>${c.label}</option>`).join('')}</select></label>` +
+        '<button class="btn" id="n-ok" style="width:100%;margin-top:8px">Crea</button>', f => {
+        f.querySelector('#n-ok').onclick = async () => {
+          const nome = f.querySelector('#n-nome').value.trim();
+          if (!nome) { UI.avviso('Scrivi il nome', true); return; }
+          const sid = G.nuovoId('s_');
+          if (await UI.salva(dd => G.Mod.nuovaSpecie(dd, sid, nome, f.querySelector('#n-cat').value), 'Scheda creata')) {
+            UI.chiudiFoglio(true);
+            schedaInModifica = sid;
+            location.hash = '#scheda/' + sid;
+          }
+        };
+      });
+    };
   }
 
+  let schedaInModifica = null;
   function paginaScheda(main, sid, modifica) {
+    if (schedaInModifica === sid) { schedaInModifica = null; modifica = true; }
     const d = G.Archivio.d;
     const s = Q.specie(d, sid);
     if (!s) { main.innerHTML = '<div class="vuoto">Scheda non trovata</div>'; return; }
     const c = CATEGORIE[s.categoria] || CATEGORIE.altro;
     const piante = Q.pianteDi(d, sid);
     if (modifica) { formScheda(main, s); return; }
+    const m = G.meseCorrente();
     let h = `<div class="riga" style="margin-top:6px"><a href="#schede" style="font-size:24px;text-decoration:none">‹</a>${UI.iconaSpecie(s, 56)}` +
       `<div class="cresce"><h2 style="margin:0">${esc(s.nome)}</h2><div class="piccolo"><i>${esc(s.nome_scientifico || '')}</i>` +
       `${s.famiglia ? ' · ' + esc(s.famiglia) : ''}</div></div></div>` +
@@ -133,35 +167,50 @@
     const info = G.CAMPI_TESTO.filter(([k]) => k !== 'nome_scientifico' && k !== 'famiglia' && s[k]);
     if (info.length || (s.fioritura || []).length) {
       h += '<div class="card"><table class="tab">' + info.map(([k, l]) => `<tr><th>${l}</th><td>${esc(s[k])}</td></tr>`).join('') +
-        ((s.fioritura || []).length ? `<tr><th>Fioritura</th><td>${s.fioritura.map(m => MESI[m - 1]).join(', ')}</td></tr>` : '') +
+        ((s.fioritura || []).length ? `<tr><th>Fioritura</th><td>${s.fioritura.map(x => MESI[x - 1]).join(', ')}</td></tr>` : '') +
         '</table></div>';
     }
     if (s.note) h += `<div class="card"><b>Note</b><br>${esc(s.note)}</div>`;
     h += '<div class="titolo-sez">Lavori</div>';
     const ord = Object.keys(TIPI_ATTIVITA);
+    if (!(s.attivita || []).length) h += '<div class="piccolo">Nessun lavoro: aggiungilo da "Modifica scheda".</div>';
     for (const a of [...(s.attivita || [])].sort((x, y) => ord.indexOf(x.tipo) - ord.indexOf(y.tipo))) {
       const t = TIPI_ATTIVITA[a.tipo] || TIPI_ATTIVITA.altro;
-      const [m, v] = Q.tempi(s, a);
-      h += `<div class="card" style="border-left:4px solid ${t.colore}"><b style="color:${t.colore}">${t.emoji} ${esc(a.titolo)}</b>` +
-        htmlMesi(a.mesi, t.colore, G.meseCorrente()) +
+      const [mi, v] = Q.tempi(s, a);
+      h += `<div class="card" style="border-left:4px solid ${t.colore}"><b style="color:${t.colore}">${t.emoji} ${esc(a.titolo || t.label)}</b>` +
+        htmlMesi(a.mesi, t.colore, m) +
         (a.prodotto || a.dose ? `<div>🧴 ${esc([a.prodotto, a.dose].filter(Boolean).join(' · '))}</div>` : '') +
         (a.note ? `<div class="piccolo">${esc(a.note)}</div>` : '') +
-        `<div class="piccolo">⏱ ${m} min per pianta${v ? ` · ${v}× al mese` : ''}</div></div>`;
+        `<div class="piccolo">⏱ ${mi} min per pianta${v ? ` · ${v}× al mese` : ''}</div></div>`;
     }
+    h += Analisi.cartaTempo(s);
+    h += `<div class="titolo-sez">Sulla mappa (${piante.length})</div>`;
     if (piante.length) {
-      h += '<div class="titolo-sez">Sulla mappa</div><div class="card">' + piante.map(p => {
+      h += '<div class="card">' + piante.map(p => {
         const z = Q.zonaDi(d, p);
         return `<a class="spunta" href="#mappa/${p.id}" style="text-decoration:none;color:inherit"><span class="cresce">${esc(Q.nomePianta(d, p))}` +
           `${z ? ` <span class="piccolo">(${esc(z.nome)})</span>` : ''}</span>📍</a>`;
       }).join('') + '</div>';
+    } else h += '<div class="piccolo">Nessuna. Aggiungila dalla mappa con il pulsante ＋.</div>';
+    const kg = Q.raccolti(d)[sid];
+    if (kg) {
+      h += '<div class="card"><div class="tit-graf">🧺 Raccolti</div>' + Object.keys(kg).sort().reverse().slice(0, 6)
+        .map(a => `<div class="piccolo">${a}: ${num(kg[a])} kg</div>`).join('') + '</div>';
     }
-    const storico = (s.storico || []).slice(-5).reverse();
+    const voci = d.diario.filter(e => e.specie_id === sid).sort((x, y) => (y.data || '').localeCompare(x.data || ''));
+    h += `<div class="card"><div class="tit-graf">Interventi registrati (${voci.length})</div>` + voci.slice(0, 20).map(e => {
+      const p = Q.pianta(d, e.pianta_id || '');
+      return `<div class="piccolo">${esc(e.data)} · ${esc(e.descrizione)}${p ? ` (${esc(Q.nomePianta(d, p))})` : ''}</div>`;
+    }).join('') + '<button class="btn leggero piccolo-btn" id="reg" style="margin-top:6px">📝 Registra intervento</button></div>';
+    const storico = (s.storico || []).slice(-15).reverse();
     if (storico.length) {
-      h += '<div class="titolo-sez" style="font-size:15px">Ultime modifiche</div>' +
+      h += '<div class="titolo-sez" style="font-size:15px">Storico modifiche</div>' +
         storico.map(x => `<div class="piccolo">${esc(x.data)} – ${esc(x.nota)}</div>`).join('');
     }
     main.innerHTML = h;
+    Analisi.disegnaTempo(main, s);
     main.querySelector('#modifica').onclick = () => paginaScheda(main, sid, true);
+    main.querySelector('#reg').onclick = () => UI.dialogoDiario({ specie_id: sid });
   }
 
   function formScheda(main, s) {
@@ -169,29 +218,67 @@
     const area = (k, l, val) => `<label class="campo">${l}<textarea data-k="${k}">${esc(val ?? '')}</textarea></label>`;
     const mesiSel = (attr, mesi) => '<div class="sel-mesi" ' + attr + '>' +
       MESI.map((m, i) => `<button type="button" data-mese="${i + 1}" class="${(mesi || []).includes(i + 1) ? 'on' : ''}">${m}</button>`).join('') + '</div>';
-    let h = `<div class="riga" style="margin-top:6px">${UI.iconaSpecie(s, 40)}<h2 class="cresce">Modifica scheda</h2></div>`;
-    h += '<div class="card">' + campo('nome', 'Nome comune', s.nome) +
-      G.CAMPI_TESTO.map(([k, l]) => campo(k, l, s[k])).join('') +
-      campo('diametro_m', 'Diametro chioma (m)', String(s.diametro_m ?? '').replace('.', ','), 'text" inputmode="decimal') +
-      '<label class="campo">Fioritura</label>' + mesiSel('data-fioritura', s.fioritura) +
-      area('descrizione', 'Descrizione', s.descrizione) + area('note', 'Note personali', s.note) + '</div>';
-    h += '<div class="titolo-sez">Lavori</div>';
-    for (const a of s.attivita || []) {
+    // lavori in modifica: quelli esistenti + quelli aggiunti qui (nuovi) − quelli tolti
+    const nuove = [];
+    const tolte = new Set();
+    const cartaLavoro = (a, nuova) => {
       const t = TIPI_ATTIVITA[a.tipo] || TIPI_ATTIVITA.altro;
-      h += `<div class="card" data-att="${a.id}" style="border-left:4px solid ${t.colore}"><b style="color:${t.colore}">${t.emoji} ${t.label}</b>` +
-        `<label class="campo">Titolo<input data-ak="titolo" value="${esc(a.titolo)}"></label>` +
+      return `<div class="card" data-att="${a.id}" ${nuova ? 'data-nuova="1"' : ''} style="border-left:4px solid ${t.colore}">` +
+        `<div class="riga"><b class="cresce" style="color:${t.colore}">${t.emoji} ${t.label}${nuova ? ' (nuovo)' : ''}</b>` +
+        `<button type="button" class="icona-btn" data-togli="${a.id}" style="background:transparent;color:var(--rosso)" aria-label="Togli lavoro">🗑</button></div>` +
+        `<label class="campo">Tipo<select data-ak="tipo">${Object.entries(TIPI_ATTIVITA).map(([k, x]) => `<option value="${k}" ${k === a.tipo ? 'selected' : ''}>${x.emoji} ${x.label}</option>`).join('')}</select></label>` +
+        `<label class="campo">Titolo<input data-ak="titolo" value="${esc(a.titolo || '')}"></label>` +
         '<label class="campo">Mesi</label>' + mesiSel('data-mesi', a.mesi) +
         `<label class="campo">Prodotto<input data-ak="prodotto" value="${esc(a.prodotto || '')}"></label>` +
         `<label class="campo">Dose<input data-ak="dose" value="${esc(a.dose || '')}"></label>` +
         `<label class="campo">Note / come fare<textarea data-ak="note">${esc(a.note || '')}</textarea></label>` +
-        `<label class="campo">Minuti per pianta<input data-ak="minuti" type="text" inputmode="decimal" value="${esc(a.minuti ?? '')}"></label></div>`;
-    }
+        '<div class="riga">' +
+        `<label class="campo cresce">Minuti per pianta<input data-ak="minuti" type="text" inputmode="decimal" value="${esc(a.minuti ?? '')}"></label>` +
+        `<label class="campo cresce">Volte al mese<input data-ak="volte_mese" type="text" inputmode="numeric" placeholder="1 a stagione" value="${esc(a.volte_mese || '')}"></label></div></div>`;
+    };
+    let h = `<div class="riga" style="margin-top:6px">${UI.iconaSpecie(s, 40)}<h2 class="cresce">Modifica scheda</h2></div>`;
+    h += '<div class="card">' + campo('nome', 'Nome comune', s.nome) +
+      `<label class="campo">Categoria<select data-k="categoria">${Object.entries(CATEGORIE).map(([k, c]) => `<option value="${k}" ${k === (s.categoria || 'altro') ? 'selected' : ''}>${c.label}</option>`).join('')}</select></label>` +
+      campo('icona', 'Icona (emoji, se manca il disegno)', s.icona) +
+      G.CAMPI_TESTO.map(([k, l]) => campo(k, l, s[k])).join('') +
+      campo('diametro_m', 'Diametro chioma (m)', String(s.diametro_m ?? '').replace('.', ','), 'text" inputmode="decimal') +
+      '<label class="campo">Fioritura</label>' + mesiSel('data-fioritura', s.fioritura) +
+      area('descrizione', 'Descrizione', s.descrizione) + area('note', 'Note personali', s.note) + '</div>';
+    h += '<div class="titolo-sez">Lavori</div><div id="lavori">' + (s.attivita || []).map(a => cartaLavoro(a, false)).join('') + '</div>' +
+      '<div class="chips" id="aggiungi-lavoro"><span class="piccolo" style="align-self:center">➕ Aggiungi:</span>' +
+      Object.entries(TIPI_ATTIVITA).map(([k, t]) => `<button type="button" class="chip" data-nuovo="${k}">${t.emoji} ${t.label}</button>`).join('') + '</div>';
     h += '<label class="campo">Nota sulla modifica (facoltativa)<input id="nota-mod"></label>' +
-      '<div class="riga" style="margin:12px 0 30px"><button class="btn leggero cresce" id="annulla">Annulla</button>' +
-      '<button class="btn cresce" id="salva">💾 Salva</button></div>';
+      '<div class="riga" style="margin:12px 0 18px"><button class="btn leggero cresce" id="annulla">Annulla</button>' +
+      '<button class="btn cresce" id="salva">💾 Salva</button></div>' +
+      '<button class="btn rosso" id="elimina-scheda" style="width:100%;margin-bottom:30px">🗑 Elimina scheda</button>';
     main.innerHTML = h;
-    main.querySelectorAll('.sel-mesi button').forEach(b => b.onclick = () => b.classList.toggle('on'));
+    const collega = root => {
+      root.querySelectorAll('.sel-mesi button').forEach(b => b.onclick = () => b.classList.toggle('on'));
+      root.querySelectorAll('[data-togli]').forEach(b => b.onclick = () => {
+        const card = b.closest('[data-att]');
+        if (!card.dataset.nuova) tolte.add(card.dataset.att);
+        else nuove.splice(nuove.indexOf(card.dataset.att), 1);
+        card.remove();
+      });
+    };
+    collega(main);
+    main.querySelectorAll('[data-nuovo]').forEach(b => b.onclick = () => {
+      const a = { id: G.nuovoId('a_'), tipo: b.dataset.nuovo, mesi: [], titolo: '', prodotto: '', dose: '', note: '', minuti: null, volte_mese: null };
+      G.completaTempi(s, a);
+      nuove.push(a.id);
+      const tmp = document.createElement('div');
+      tmp.innerHTML = cartaLavoro(a, true);
+      const card = tmp.firstChild;
+      main.querySelector('#lavori').appendChild(card);
+      collega(card);
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
     main.querySelector('#annulla').onclick = () => paginaScheda(main, s.id);
+    main.querySelector('#elimina-scheda').onclick = async () => {
+      const n = Q.pianteDi(G.Archivio.d, s.id).length;
+      if (!confirm(`Eliminare la scheda "${s.nome}"?` + (n ? `\nVerranno tolte anche ${n} piante dalla mappa.` : ''))) return;
+      if (await UI.salva(dd => G.Mod.eliminaSpecie(dd, s.id), 'Scheda eliminata')) location.hash = '#schede';
+    };
     main.querySelector('#salva').onclick = async () => {
       const mesiDi = el => [...el.querySelectorAll('button.on')].map(b => parseInt(b.dataset.mese, 10));
       const campi = {};
@@ -200,12 +287,16 @@
         if (k === 'diametro_m') { const v = parseFloat(String(i.value).replace(',', '.')); campi[k] = isFinite(v) && v > 0 ? v : s[k]; } else campi[k] = i.value;
       });
       if (!campi.nome.trim()) { UI.avviso('Il nome non può essere vuoto', true); return; }
+      campi.nome = campi.nome.trim();
       campi.fioritura = mesiDi(main.querySelector('[data-fioritura]'));
       const att = {};
       main.querySelectorAll('[data-att]').forEach(c => {
         const a = {};
         c.querySelectorAll('[data-ak]').forEach(i => {
-          if (i.dataset.ak === 'minuti') { const v = parseFloat(String(i.value).replace(',', '.')); a.minuti = isFinite(v) ? v : ''; } else a[i.dataset.ak] = i.value;
+          const k = i.dataset.ak;
+          if (k === 'minuti') { const v = parseFloat(String(i.value).replace(',', '.')); a.minuti = isFinite(v) ? v : ''; }
+          else if (k === 'volte_mese') { const v = parseInt(i.value, 10); a.volte_mese = isFinite(v) && v > 0 ? v : 0; }
+          else a[k] = i.value;
         });
         a.mesi = mesiDi(c.querySelector('[data-mesi]'));
         att[c.dataset.att] = a;
@@ -214,15 +305,27 @@
       const cambiati = {};
       for (const [k, v] of Object.entries(campi)) if (JSON.stringify(s[k] ?? '') !== JSON.stringify(v ?? '')) cambiati[k] = v;
       const attCambiate = {};
+      const attNuove = [];
       for (const [aid, ca] of Object.entries(att)) {
+        if (nuove.includes(aid)) {
+          const t = TIPI_ATTIVITA[ca.tipo] || TIPI_ATTIVITA.altro;
+          attNuove.push({ id: aid, ...ca, titolo: ca.titolo.trim() || t.label });
+          continue;
+        }
         const a0 = (s.attivita || []).find(x => x.id === aid) || {};
         const diff = {};
-        for (const [k, v] of Object.entries(ca)) if (JSON.stringify(a0[k] ?? '') !== JSON.stringify(v ?? '')) diff[k] = v;
+        for (const [k, v] of Object.entries(ca)) {
+          const prima = k === 'volte_mese' ? (a0[k] || 0) : (a0[k] ?? '');
+          if (JSON.stringify(prima) !== JSON.stringify(v ?? '')) diff[k] = v;
+        }
         if (Object.keys(diff).length) attCambiate[aid] = diff;
       }
+      const attEliminate = [...tolte];
       const nota = main.querySelector('#nota-mod').value.trim();
-      if (!Object.keys(cambiati).length && !Object.keys(attCambiate).length && !nota) { paginaScheda(main, s.id); return; }
-      if (await UI.salva(dd => G.Mod.aggiornaSpecie(dd, s.id, cambiati, attCambiate, nota), 'Scheda salvata')) paginaScheda(main, s.id);
+      if (!Object.keys(cambiati).length && !Object.keys(attCambiate).length && !attNuove.length && !attEliminate.length && !nota) {
+        paginaScheda(main, s.id); return;
+      }
+      if (await UI.salva(dd => G.Mod.aggiornaSpecie(dd, s.id, cambiati, attCambiate, nota, attNuove, attEliminate), 'Scheda salvata')) paginaScheda(main, s.id);
     };
   }
 
@@ -234,18 +337,10 @@
     let h = '<div class="chips"><button class="chip' + (diario.vista === 'interventi' ? ' on' : '') + '" data-v="interventi">📖 Interventi</button>' +
       '<button class="chip' + (diario.vista === 'raccolti' ? ' on' : '') + '" data-v="raccolti">🧺 Raccolti</button></div>';
     if (diario.vista === 'raccolti') {
-      const r = Q.raccolti(d);
-      const anni = [...new Set(Object.values(r).flatMap(x => Object.keys(x).map(Number)))].sort().slice(-3);
-      const righe = Object.entries(r).map(([sid, v]) => [Q.specie(d, sid), v]).filter(([s]) => s)
-        .sort((a, b) => a[0].nome.localeCompare(b[0].nome));
-      h += '<button class="btn" id="nuovo-rac" style="width:100%;margin:8px 0">🧺 Registra un raccolto</button>';
-      if (!righe.length) h += '<div class="vuoto">Nessun raccolto registrato.</div>';
-      else {
-        h += '<div class="card"><table class="tab"><tr><th>Specie</th>' + anni.map(a => `<th class="num">${a}</th>`).join('') + '</tr>' +
-          righe.map(([s, v]) => `<tr><td>${esc(s.nome)}</td>` + anni.map(a => `<td class="num">${v[a] ? num(v[a], 2) : '—'}</td>`).join('') + '</tr>').join('') +
-          '<tr><th>Totale kg</th>' + anni.map(a => `<th class="num">${num(righe.reduce((t, [, v]) => t + (v[a] || 0), 0), 2)}</th>`).join('') + '</tr></table></div>';
-      }
+      h += '<button class="btn" id="nuovo-rac" style="width:100%;margin:8px 0">🧺 Registra un raccolto</button>' +
+        '<div class="piccolo">Somma dei kg registrati per specie e per anno.</div><div id="vista-raccolti"></div>';
       main.innerHTML = h;
+      Analisi.raccolti(main.querySelector('#vista-raccolti'));
       main.querySelector('#nuovo-rac').onclick = () => UI.dialogoDiario({ tipo: 'raccolta' });
     } else {
       h += '<button class="btn" id="nuovo" style="width:100%;margin:8px 0">📝 Registra intervento</button>' +
@@ -372,21 +467,30 @@
     return Object.assign(out.sort((a, b) => ord[a.livello] - ord[b.livello]), { bilancio: out.bilancio });
   }
 
-  async function paginaMeteo(main) {
+  async function paginaMeteo(main, vista) {
     const d = G.Archivio.d;
     const luogo = d.impostazioni.luogo;
-    main.innerHTML = `<div class="piccolo">📍 ${esc(luogo.nome || '')}</div><div class="vuoto" id="att">Scarico le previsioni…</div>`;
+    const testa = viste('meteo', VISTE_METEO, vista === 'periodo' || vista === 'storico' ? vista : '') +
+      `<div class="piccolo">📍 ${esc(luogo.nome || '')}</div>`;
+    if (vista === 'periodo' || vista === 'storico') {
+      main.innerHTML = testa + '<div id="vista"></div>';
+      const el = main.querySelector('#vista');
+      if (vista === 'periodo') Analisi.vistaPeriodo(el); else Analisi.vistaStorico(el);
+      return;
+    }
+    const hash = location.hash;
+    main.innerHTML = testa + '<div class="vuoto" id="att">Scarico le previsioni…</div>';
     let m;
     try { m = await scaricaMeteo(luogo); } catch (e) {
       main.querySelector('#att').textContent = 'Previsioni non disponibili (sei offline?)';
       return;
     }
-    if (location.hash.split('/')[0] !== '#meteo') return;
+    if (location.hash !== hash) return;
     const oggi = G.oggi();
     const prev = m.giorni.filter(g => g.data >= oggi);
     const avv = allerte(d, m.giorni);
     const COL = { alto: '#d84315', medio: '#e0a800', info: '#3b82c4' };
-    let h = `<div class="piccolo">📍 ${esc(luogo.nome || '')}</div>`;
+    let h = testa;
     if (avv.length) {
       h += '<div class="titolo-sez">🔔 Avvisi per il giardino</div>' +
         avv.map(a => `<div class="card avviso-meteo" style="border-left-color:${COL[a.livello]}">${a.icona} ${esc(a.testo)}</div>`).join('');
@@ -401,7 +505,7 @@
       h += `<div class="titolo-sez">Ultimi 7 giorni</div><div class="card">🌧 Pioggia ${num(b.pioggia7)} mm · 💨 Evaporazione ${num(b.et07)} mm<br>` +
         `<b>Bilancio idrico ${b.bil >= 0 ? '+' : ''}${num(b.bil)} mm</b><div class="piccolo">Sotto −5 mm controlla il terreno, sotto −20 mm irriga.</div></div>`;
     }
-    h += '<div class="piccolo" style="margin-top:10px">Dati Open-Meteo. Storico e grafici: nell\'app del PC.</div>';
+    h += '<div class="piccolo" style="margin-top:10px">Dati Open-Meteo. Grafici e confronti con gli anni passati: viste Periodo e Storico.</div>';
     main.innerHTML = h;
   }
 

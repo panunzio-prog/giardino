@@ -11,6 +11,8 @@
     mese: G.meseCorrente(), filtro: 'tutte', chiome: false, etichette: true,
     vb: null, // viewBox corrente [x, y, w, h]
     spostando: null, // {pid, x, y, x0, y0}
+    aggiungendo: null, // {sid}: ogni tocco mette una pianta di questa specie
+    disegno: null, // {punti: [[x, y]], zid}: disegno di una zona nuova (o nuova forma di zid)
   };
 
   const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -130,6 +132,14 @@
         out.push(`<text x="${cx + r * 0.7}" y="${cy - r * 0.6}" font-size="${14 * u}" fill="#2e7d32" font-weight="700">✓</text>`);
       }
       out.push('</g>');
+    }
+
+    if (st.disegno && st.disegno.punti.length) {
+      const pp = st.disegno.punti;
+      if (pp.length >= 3) out.push(`<polygon points="${pts(pp)}" fill="#ff7043" fill-opacity="0.18" stroke="none"/>`);
+      out.push(`<polyline points="${pts(pp)}" fill="none" stroke="#e64a19" stroke-width="${3 * u}" stroke-linejoin="round"/>`);
+      pp.forEach(([x, y], i) => out.push(`<circle cx="${x * S}" cy="${y * S}" r="${(i ? 5 : 7) * u}" fill="${i ? '#fff' : '#e64a19'}" ` +
+        `stroke="#e64a19" stroke-width="${2 * u}"/>`));
     }
 
     // nord
@@ -279,6 +289,8 @@
       ridisegna();
       return;
     }
+    if (st.aggiungendo) { mettiPianta(x, y); return; }
+    if (st.disegno) { st.disegno.punti.push([x, y]); aggiornaBarra(); ridisegna(); return; }
     const p = trovaPianta(d, x, y);
     if (p) { selezione = p.id; ridisegna(); apriPianta(p.id); return; }
     const z = trovaZona(d, x, y);
@@ -325,8 +337,30 @@
       `<button class="btn leggero cresce" id="btn-scheda">📇 Scheda</button>` +
       `<button class="btn leggero cresce" id="btn-sposta">✥ Sposta</button>` +
       `<button class="btn leggero cresce" id="btn-diario">📝 Nota</button></div>`;
+    const specie = Q.specieOrdinate(d);
+    h += '<details class="modifica"><summary>✏️ Modifica pianta</summary>' +
+      `<label class="campo">Etichetta (es. "vicino al cancello")<input id="pm-etichetta" value="${esc(p.etichetta || '')}"></label>` +
+      `<label class="campo">Varietà<input id="pm-varieta" value="${esc(p.varieta || '')}"></label>` +
+      `<label class="campo">Data impianto<input id="pm-data" type="date" value="${esc(p.data_impianto || '')}"></label>` +
+      `<label class="campo">Specie<select id="pm-specie">${specie.map(x => `<option value="${x.id}" ${x.id === p.specie_id ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></label>` +
+      `<label class="campo">Note<textarea id="pm-note">${esc(p.note || '')}</textarea></label>` +
+      '<div class="riga" style="gap:8px"><button class="btn cresce" id="pm-salva">💾 Salva</button>' +
+      '<button class="btn rosso cresce" id="pm-elimina">🗑 Elimina pianta</button></div></details>';
 
     UI.foglio(h, el => {
+      el.querySelector('#pm-salva').addEventListener('click', async () => {
+        const campi = { etichetta: el.querySelector('#pm-etichetta').value.trim(), varieta: el.querySelector('#pm-varieta').value.trim(),
+          data_impianto: el.querySelector('#pm-data').value, specie_id: el.querySelector('#pm-specie').value,
+          note: el.querySelector('#pm-note').value };
+        const cambiati = {};
+        for (const [k, v] of Object.entries(campi)) if ((p[k] ?? '') !== v) cambiati[k] = v;
+        if (!Object.keys(cambiati).length) { UI.avviso('Nessuna modifica'); return; }
+        if (await UI.salva(dd => G.Mod.aggiornaPianta(dd, pid, cambiati), 'Pianta salvata')) { ridisegna(); apriPianta(pid); }
+      });
+      el.querySelector('#pm-elimina').addEventListener('click', async () => {
+        if (!confirm(`Eliminare "${Q.nomePianta(d, p)}" dalla mappa?`)) return;
+        if (await UI.salva(dd => G.Mod.eliminaPianta(dd, pid), 'Pianta eliminata')) { selezione = null; UI.chiudiFoglio(true); ridisegna(); }
+      });
       el.querySelectorAll('input[data-att]').forEach(cb => cb.addEventListener('change', async () => {
         const ok = await UI.salva(dd => G.Mod.segnaFatto(dd, s.id, cb.dataset.att, pid, st.mese, cb.checked),
           cb.checked ? 'Segnato come fatto' : 'Tolto dal diario');
@@ -362,9 +396,145 @@
       h += `<div class="titolo-sez" style="font-size:16px">Piante (${piante.length})</div>`;
       h += piante.map(p => `<div class="spunta" data-p="${p.id}">${UI.iconaSpecie(Q.specie(d, p.specie_id), 28)}<span class="cresce">${esc(Q.nomePianta(d, p))}</span>›</div>`).join('');
     }
+    const tipi = Object.entries(TIPI_ZONA).filter(([k]) => k !== 'edificio');
+    h += '<details class="modifica"><summary>✏️ Modifica zona</summary>' +
+      `<label class="campo">Nome<input id="zm-nome" value="${esc(z.nome)}"></label>` +
+      `<label class="campo">Tipo<select id="zm-tipo">${tipi.map(([k, v]) => `<option value="${k}" ${k === (TIPI_ZONA[z.tipo] ? z.tipo : 'altro') ? 'selected' : ''}>${v.label}</option>`).join('')}</select></label>` +
+      `<label class="campo">Note<textarea id="zm-note">${esc(z.note || '')}</textarea></label>` +
+      '<button class="btn" id="zm-salva" style="width:100%">💾 Salva</button>' +
+      '<div class="titolo-sez" style="font-size:15px">Forma</div><div class="chips" style="flex-wrap:wrap">' +
+      (z.punti.length === 4 ? '<button class="chip" id="zm-raddrizza">▭ Raddrizza</button>' : '') +
+      '<button class="chip" id="zm-ridisegna">✎ Ridisegna</button></div>' +
+      '<div class="piccolo" style="margin-top:6px">Sposta di 25 cm</div><div class="chips">' +
+      [['←', -0.25, 0], ['→', 0.25, 0], ['↑', 0, -0.25], ['↓', 0, 0.25]].map(([l, dx, dy]) => `<button class="chip" data-dx="${dx}" data-dy="${dy}">${l}</button>`).join('') + '</div>' +
+      '<button class="btn rosso" id="zm-elimina" style="width:100%;margin-top:10px">🗑 Elimina zona</button></details>';
     UI.foglio(h, el => {
       el.querySelectorAll('[data-p]').forEach(r => r.addEventListener('click', () => { selezione = r.dataset.p; ridisegna(); apriPianta(r.dataset.p); }));
+      const riapri = () => { ridisegna(); apriZona(zid); const det = document.querySelector('#foglio details.modifica'); if (det) det.open = true; };
+      el.querySelector('#zm-salva').addEventListener('click', async () => {
+        const campi = { nome: el.querySelector('#zm-nome').value.trim() || z.nome, tipo: el.querySelector('#zm-tipo').value,
+          note: el.querySelector('#zm-note').value };
+        if (await UI.salva(dd => G.Mod.aggiornaZona(dd, zid, campi), 'Zona salvata')) riapri();
+      });
+      const rad = el.querySelector('#zm-raddrizza');
+      if (rad) rad.addEventListener('click', async () => {
+        if (await UI.salva(dd => { const zz = Q.zona(dd, zid); if (zz) G.Mod.aggiornaZona(dd, zid, { punti: G.rettangolo(zz.punti) }); }, 'Forma raddrizzata')) riapri();
+      });
+      el.querySelectorAll('[data-dx]').forEach(b => b.addEventListener('click', async () => {
+        const dx = parseFloat(b.dataset.dx), dy = parseFloat(b.dataset.dy);
+        if (await UI.salva(dd => { const zz = Q.zona(dd, zid); if (zz) G.Mod.aggiornaZona(dd, zid, { punti: zz.punti.map(([x, y]) => [x + dx, y + dy]) }); }, 'Zona spostata')) riapri();
+      }));
+      el.querySelector('#zm-ridisegna').addEventListener('click', () => iniziaDisegno(zid));
+      el.querySelector('#zm-elimina').addEventListener('click', async () => {
+        if (!confirm(`Eliminare la zona "${z.nome}"? Le piante restano sulla mappa.`)) return;
+        if (await UI.salva(dd => G.Mod.eliminaZona(dd, zid), 'Zona eliminata')) { selezione = null; UI.chiudiFoglio(true); ridisegna(); }
+      });
     }, () => { selezione = null; ridisegna(); });
+  }
+
+  // --------------------------------------------------- aggiungi: pianta o zona
+  function barra(html) {
+    togliBarra();
+    const b = document.createElement('div');
+    b.className = 'mappa-avviso barra-modo';
+    b.id = 'barra-modo';
+    b.innerHTML = html;
+    document.getElementById('contenuto').appendChild(b);
+    return b;
+  }
+  function togliBarra() { const b = document.getElementById('barra-modo'); if (b) b.remove(); }
+  function fineModi() { st.aggiungendo = null; st.disegno = null; togliBarra(); ridisegna(); }
+
+  function menuAggiungi() {
+    UI.foglio('<h2>Aggiungi alla mappa</h2>' +
+      '<button class="btn" id="ag-pianta" style="width:100%;margin:6px 0">🌳 Una pianta</button>' +
+      '<button class="btn leggero" id="ag-zona" style="width:100%;margin:6px 0">⬠ Una zona (aiuola, orto, prato…)</button>', el => {
+      el.querySelector('#ag-pianta').onclick = () => scegliSpecie();
+      el.querySelector('#ag-zona').onclick = () => { UI.chiudiFoglio(true); iniziaDisegno(null); };
+    });
+  }
+
+  function scegliSpecie() {
+    const d = G.Archivio.d;
+    const h = '<h2>Quale specie?</h2><input class="cerca" id="ag-cerca" type="search" placeholder="Cerca…">' +
+      '<div id="ag-elenco"></div><div class="piccolo" style="margin-top:8px">Manca? Creala prima in Schede → ➕ Nuova scheda.</div>';
+    UI.foglio(h, el => {
+      const elenco = () => {
+        const q = el.querySelector('#ag-cerca').value.toLowerCase();
+        el.querySelector('#ag-elenco').innerHTML = Q.specieOrdinate(d)
+          .filter(s => !q || `${s.nome} ${s.nome_scientifico || ''}`.toLowerCase().includes(q))
+          .map(s => `<div class="spunta" data-s="${s.id}">${UI.iconaSpecie(s, 28)}<span class="cresce">${esc(s.nome)}</span>` +
+            `<span class="piccolo">${Q.pianteDi(d, s.id).length || ''}</span></div>`).join('');
+        el.querySelectorAll('[data-s]').forEach(r => r.onclick = () => iniziaAggiungi(r.dataset.s));
+      };
+      el.querySelector('#ag-cerca').addEventListener('input', elenco);
+      elenco();
+    });
+  }
+
+  function iniziaAggiungi(sid) {
+    UI.chiudiFoglio(true);
+    fineModi();
+    st.aggiungendo = { sid, n: 0 };
+    const s = Q.specie(G.Archivio.d, sid);
+    const b = barra(`Tocca dove mettere: ${esc(s.nome)} <button class="btn piccolo-btn bianco" id="modo-ok">Fine</button>`);
+    b.querySelector('#modo-ok').onclick = fineModi;
+  }
+
+  async function mettiPianta(x, y) {
+    const { sid } = st.aggiungendo;
+    const pid = G.nuovoId('p_');
+    if (await UI.salva(dd => G.Mod.aggiungiPianta(dd, pid, sid, x, y), 'Pianta aggiunta (tocca ancora per un\'altra)')) {
+      if (st.aggiungendo) st.aggiungendo.n++;
+      selezione = pid;
+      ridisegna();
+    }
+  }
+
+  function iniziaDisegno(zid) {
+    UI.chiudiFoglio(true);
+    fineModi();
+    st.disegno = { punti: [], zid };
+    if (zid) selezione = zid;
+    aggiornaBarra();
+    ridisegna();
+  }
+  function aggiornaBarra() {
+    if (!st.disegno) return;
+    const n = st.disegno.punti.length;
+    const b = barra(`${n ? `${n} punti` : 'Tocca gli angoli della zona'} ` +
+      `<button class="btn piccolo-btn bianco" id="d-ok" ${n < 3 ? 'disabled' : ''}>Chiudi forma</button>` +
+      `<button class="btn piccolo-btn" id="d-undo" ${n ? '' : 'disabled'} style="background:transparent">↶</button>` +
+      '<button class="btn piccolo-btn" id="d-no" style="background:transparent">✕</button>');
+    b.querySelector('#d-no').onclick = fineModi;
+    b.querySelector('#d-undo').onclick = () => { st.disegno.punti.pop(); aggiornaBarra(); ridisegna(); };
+    b.querySelector('#d-ok').onclick = chiudiForma;
+  }
+  async function chiudiForma() {
+    const { punti, zid } = st.disegno;
+    if (punti.length < 3) return;
+    if (zid) {
+      if (await UI.salva(dd => G.Mod.aggiornaZona(dd, zid, { punti }), 'Forma aggiornata')) { fineModi(); apriZona(zid); }
+      return;
+    }
+    const tipi = Object.entries(TIPI_ZONA).filter(([k]) => k !== 'edificio');
+    UI.foglio('<h2>Nuova zona</h2><label class="campo">Nome<input id="nz-nome" value="Nuova aiuola"></label>' +
+      `<label class="campo">Tipo<select id="nz-tipo">${tipi.map(([k, v]) => `<option value="${k}" ${k === 'aiuola' ? 'selected' : ''}>${v.label}</option>`).join('')}</select></label>` +
+      `<div class="piccolo">${G.areaPoligono(punti).toFixed(1).replace('.', ',')} m²</div>` +
+      '<button class="btn" id="nz-ok" style="width:100%;margin-top:8px">Crea</button>', el => {
+      el.querySelector('#nz-ok').onclick = async () => {
+        const nid = G.nuovoId('z_');
+        const nome = el.querySelector('#nz-nome').value.trim() || 'Zona';
+        const tipo = el.querySelector('#nz-tipo').value;
+        if (await UI.salva(dd => G.Mod.aggiungiZona(dd, nid, nome, punti, tipo), 'Zona creata')) {
+          UI.chiudiFoglio(true);
+          fineModi();
+          selezione = nid;
+          ridisegna();
+          apriZona(nid);
+        }
+      };
+    });
   }
 
   // ---------------------------------------------------------- sposta pianta
@@ -402,7 +572,8 @@
       `<button class="chip" id="mese-succ">›</button>` +
       Object.entries(FILTRI).map(([k, v]) => `<button class="chip${st.filtro === k ? ' on' : ''}" data-f="${k}">${v}</button>`).join('') +
       `<button class="chip${st.chiome ? ' on' : ''}" id="chiome">Chiome</button></div></div>` +
-      `<div class="mappa-zoom"><button id="z-piu">+</button><button id="z-meno">−</button><button id="z-tutto">⤢</button></div>`;
+      `<div class="mappa-zoom"><button id="z-aggiungi" class="aggiungi" aria-label="Aggiungi">＋</button>` +
+      `<button id="z-piu">+</button><button id="z-meno">−</button><button id="z-tutto">⤢</button></div>`;
     svgEl = main.querySelector('svg');
     const box = main.querySelector('#mappa-box');
     if (!st.vb) st.vb = vbIniziale(d);
@@ -416,6 +587,7 @@
     main.querySelector('#z-piu').onclick = () => zoom(0.7);
     main.querySelector('#z-meno').onclick = () => zoom(1 / 0.7);
     main.querySelector('#z-tutto').onclick = () => { st.vb = vbIniziale(d); ridisegna(); };
+    main.querySelector('#z-aggiungi').onclick = menuAggiungi;
     const cambiaMese = k => { st.mese = (st.mese - 1 + k + 12) % 12 + 1; render(main); };
     main.querySelector('#mese-prec').onclick = () => cambiaMese(-1);
     main.querySelector('#mese-succ').onclick = () => cambiaMese(1);
@@ -423,6 +595,8 @@
     main.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { st.filtro = b.dataset.f; render(main); });
     main.querySelector('#chiome').onclick = () => { st.chiome = !st.chiome; render(main); };
     if (st.spostando) st.spostando = null;
+    st.aggiungendo = null;
+    st.disegno = null;
   }
 
   window.Mappa = { render, ridisegna, apriPianta, mostra(pid) { selezione = pid; } };

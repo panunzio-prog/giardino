@@ -129,6 +129,30 @@
     return ok;
   }
 
+  // raddrizza un quadrilatero disegnato a mano (come rettangolo() in app/data.py)
+  function rettangolo(pp) {
+    if (pp.length !== 4) return pp;
+    const lati = [0, 1, 2, 3].map(i => [pp[(i + 1) % 4][0] - pp[i][0], pp[(i + 1) % 4][1] - pp[i][1]]);
+    let sx = 0, sy = 0;
+    for (const [dx, dy] of lati) {
+      const l = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+      sx += Math.cos(4 * a) * l; sy += Math.sin(4 * a) * l;
+    }
+    let ang = Math.atan2(sy, sx) / 4;
+    const a0 = Math.atan2(lati[0][1], lati[0][0]);
+    while (a0 - ang > Math.PI / 4) ang += Math.PI / 2;
+    while (ang - a0 > Math.PI / 4) ang -= Math.PI / 2;
+    const L = (Math.hypot(...lati[0]) + Math.hypot(...lati[2])) / 2;
+    const W = (Math.hypot(...lati[1]) + Math.hypot(...lati[3])) / 2;
+    const cx = pp.reduce((t, p) => t + p[0], 0) / 4, cy = pp.reduce((t, p) => t + p[1], 0) / 4;
+    const ux = Math.cos(ang), uy = Math.sin(ang);
+    const croce = lati[0][0] * lati[1][1] - lati[0][1] * lati[1][0];
+    const [vx, vy] = croce > 0 ? [-uy, ux] : [uy, -ux];
+    const r2 = v => Math.round(v * 100) / 100;
+    return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([su, sv]) =>
+      [r2(cx + su * L / 2 * ux + sv * W / 2 * vx), r2(cy + su * L / 2 * uy + sv * W / 2 * vy)]);
+  }
+
   // --------------------------------------------------------- letture sui dati
   // Tutte le funzioni ricevono d (il contenuto di giardino.json)
   const Q = {
@@ -199,6 +223,27 @@
       }
       return out;
     },
+    // {"specie_id|tipo": [ore gen..dic]} per le piante presenti (come ore_per_mese in app/data.py)
+    orePerMese(d, tipi, categorie, specieIds) {
+      const out = {};
+      for (const s of d.specie) {
+        if (categorie && categorie.length && !categorie.includes(s.categoria)) continue;
+        if (specieIds && specieIds.length && !specieIds.includes(s.id)) continue;
+        const n = Q.pianteDi(d, s.id).length;
+        if (!n) continue;
+        for (const a of s.attivita || []) {
+          if (tipi && tipi.length && !tipi.includes(a.tipo)) continue;
+          const h = Q.oreAttivitaMese(s, a, n);
+          if (!h) continue;
+          const k = s.id + '|' + (a.tipo || 'altro');
+          const riga = out[k] = out[k] || new Array(12).fill(0);
+          for (const mm of a.mesi || []) { const m = parseInt(mm, 10); if (m >= 1 && m <= 12) riga[m - 1] += h; }
+        }
+      }
+      return out;
+    },
+    tipiSpecieNelMese: (s, mese) => [...new Set((s.attivita || []).filter(a => (a.mesi || []).includes(mese)).map(a => a.tipo))],
+    areaConfine: d => areaPoligono(d.impostazioni.confine || []),
     kgPianta: (d, pid, anno) => d.diario.filter(e => e.pianta_id === pid && (e.data || '').startsWith(String(anno)))
       .reduce((t, e) => t + (parseFloat(e.kg) || 0), 0),
   };
@@ -241,8 +286,52 @@
       const p = Q.pianta(d, pid);
       if (p) p.diametro_m = v;
     },
-    // aggiorna solo i campi cambiati sul telefono (così non si perdono modifiche fatte sul PC ad altri campi)
-    aggiornaSpecie(d, sid, campi, attivitaCambiate, nota) {
+    // ------------------------------------------------------------ specie
+    nuovaSpecie(d, sid, nome, categoria) {
+      const s = {
+        id: sid, nome, nome_scientifico: '', famiglia: '', categoria: categoria || 'frutteto', icona: '🌱',
+        diametro_m: 2.0, altezza_m: '', descrizione: '', esposizione: '', terreno: '', irrigazione: '',
+        rusticita: '', impollinazione: '', fioritura: [], note: '', attivita: [],
+        storico: [{ data: oggi(), nota: 'Scheda creata (da iPhone)' }],
+      };
+      d.specie.push(s);
+      return s;
+    },
+    eliminaSpecie(d, sid) {
+      d.specie = d.specie.filter(s => s.id !== sid);
+      d.piante = d.piante.filter(p => p.specie_id !== sid);
+    },
+    // ------------------------------------------------------------ piante
+    aggiungiPianta(d, pid, specie_id, x, y) {
+      const r2 = v => Math.round(v * 100) / 100;
+      const p = { id: pid, specie_id, etichetta: '', varieta: '', x: r2(x), y: r2(y), diametro_m: null,
+        data_impianto: '', note: '' };
+      d.piante.push(p);
+      return p;
+    },
+    eliminaPianta(d, pid) { d.piante = d.piante.filter(p => p.id !== pid); },
+    aggiornaPianta(d, pid, campi) {
+      const p = Q.pianta(d, pid);
+      if (p) Object.assign(p, campi);
+    },
+    // -------------------------------------------------------------- zone
+    aggiungiZona(d, zid, nome, punti, tipo) {
+      const r2 = v => Math.round(v * 100) / 100;
+      const z = { id: zid, nome, tipo: tipo || 'aiuola', punti: punti.map(([x, y]) => [r2(x), r2(y)]), colore: '', note: '' };
+      d.zone.push(z);
+      return z;
+    },
+    aggiornaZona(d, zid, campi) {
+      const z = Q.zona(d, zid);
+      if (!z) return;
+      if (campi.punti) campi = { ...campi, punti: campi.punti.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100]) };
+      Object.assign(z, campi);
+    },
+    eliminaZona(d, zid) { d.zone = d.zone.filter(z => z.id !== zid); },
+
+    // aggiorna solo i campi cambiati sul telefono (così non si perdono modifiche fatte sul PC ad altri campi).
+    // attNuove: attività complete da aggiungere (con id già assegnato); attEliminate: id da togliere.
+    aggiornaSpecie(d, sid, campi, attivitaCambiate, nota, attNuove = [], attEliminate = []) {
       const s = Q.specie(d, sid);
       if (!s) return;
       const cambi = [];
@@ -256,6 +345,19 @@
           if (JSON.stringify(a[k] ?? '') !== JSON.stringify(v ?? '')) { a[k] = v; if (!cambi.includes('attivita')) cambi.push('attivita'); }
         }
         completaTempi(s, a);
+      }
+      if (attEliminate.length) {
+        const prima = (s.attivita || []).length;
+        s.attivita = (s.attivita || []).filter(a => !attEliminate.includes(a.id));
+        if (s.attivita.length !== prima && !cambi.includes('attivita')) cambi.push('attivita');
+      }
+      for (const a of attNuove) {
+        s.attivita = s.attivita || [];
+        if (s.attivita.some(x => x.id === a.id)) continue;
+        const nuova = { ...a };
+        completaTempi(s, nuova);
+        s.attivita.push(nuova);
+        if (!cambi.includes('attivita')) cambi.push('attivita');
       }
       if (cambi.length || nota) {
         s.storico = s.storico || [];
@@ -350,6 +452,6 @@
   window.Giardino = {
     MESI, MESI_LUNGHI, TIPI_ATTIVITA, CATEGORIE, TIPI_ZONA, TAGLIE, CAMPI_TESTO,
     oggi, meseCorrente, annoCorrente, nuovoId, dataPerMese, fmtOre, stimaMinuti, completaTempi,
-    areaPoligono, centroPoligono, dentro, normalizza, Q, Mod, Archivio: ArchivioDbx,
+    areaPoligono, centroPoligono, dentro, rettangolo, normalizza, Q, Mod, Archivio: ArchivioDbx,
   };
 })();

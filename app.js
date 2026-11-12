@@ -70,14 +70,16 @@
     },
 
     // registra un intervento o un raccolto nel diario
-    dialogoDiario({ pianta_id = '', tipo = 'altro', descrizione = '' }) {
+    dialogoDiario({ pianta_id = '', specie_id = '', tipo = 'altro', descrizione = '' }) {
       const d = A.d;
-      const piante = [...d.piante].sort((a, b) => Q.nomePianta(d, a).localeCompare(Q.nomePianta(d, b)));
+      const piante = [...d.piante].filter(p => !specie_id || p.specie_id === specie_id)
+        .sort((a, b) => Q.nomePianta(d, a).localeCompare(Q.nomePianta(d, b)));
+      const sp = specie_id && Q.specie(d, specie_id);
       const h = '<h2>Registra intervento</h2>' +
         `<label class="campo">Data<input id="r-data" type="date" value="${G.oggi()}"></label>` +
         '<label class="campo">Tipo<select id="r-tipo">' +
         Object.entries(TIPI_ATTIVITA).map(([k, t]) => `<option value="${k}" ${k === tipo ? 'selected' : ''}>${t.emoji} ${t.label}</option>`).join('') +
-        '</select></label><label class="campo">Pianta<select id="r-pianta"><option value="">—</option>' +
+        '</select></label><label class="campo">Pianta<select id="r-pianta"><option value="">' + (sp ? esc(sp.nome) + ' (tutte)' : '—') + '</option>' +
         piante.map(p => `<option value="${p.id}" ${p.id === pianta_id ? 'selected' : ''}>${esc(Q.nomePianta(d, p))}</option>`).join('') +
         `</select></label><label class="campo">Descrizione<textarea id="r-desc">${esc(descrizione)}</textarea></label>` +
         '<label class="campo">Prodotto<input id="r-prod"></label><label class="campo">Quantità / dose<input id="r-q"></label>' +
@@ -94,7 +96,7 @@
           const kg = parseFloat(String(f.querySelector('#r-kg').value).replace(',', '.'));
           const dati = {
             tipo: tipoV, descrizione: f.querySelector('#r-desc').value.trim() || TIPI_ATTIVITA[tipoV].label,
-            pianta_id: f.querySelector('#r-pianta').value, data: f.querySelector('#r-data').value || G.oggi(),
+            pianta_id: f.querySelector('#r-pianta').value, specie_id, data: f.querySelector('#r-data').value || G.oggi(),
             prodotto: f.querySelector('#r-prod').value, quantita: f.querySelector('#r-q').value,
             kg: tipoV === 'raccolta' && kg > 0 ? kg : null,
           };
@@ -133,6 +135,7 @@
       a.dataset.p === pagina || (pagina === 'scheda' && a.dataset.p === 'schede')));
     document.getElementById('titolo-pagina').textContent = TITOLI[pagina];
     document.getElementById('schede-nav').classList.remove('nascosto');
+    Grafici.liberaTutti();
     main.className = '';
     main.innerHTML = '';
     if (UI.foglioAperto()) UI.chiudiFoglio(true);
@@ -141,7 +144,7 @@
       Mappa.render(main);
       if (arg && Q.pianta(A.d, arg)) { Mappa.mostra(arg); Mappa.ridisegna(); Mappa.apriPianta(arg); }
     } else if (pagina === 'scheda') Pagine.scheda(main, arg);
-    else Pagine[pagina](main);
+    else Pagine[pagina](main, arg);
   }
   window.addEventListener('hashchange', mostra);
 
